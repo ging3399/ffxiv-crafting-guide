@@ -20,7 +20,7 @@ map<string, skill> skill_table = {
 { "Brand of the Elements",{ "Brand of the Elements", 100, 0, 6, -10, 37, 0 } },
 { "Basic Touch",{ "Basic Touch", 0, 100, 18, -10, 5, 1 } },
 { "Standard Touch",{ "Standard Touch", 0, 125, 32, -10, 18, 1 } },
-{ "Standard Touch (Combo)",{ "Standard Touch (Combo)", 0, 125, 18, -10, 18, 1 } },
+{ "Standard Touch (Combo)",{ "Standard Touch", 0, 125, 18, -10, 18, 1 } },
 { "Basic Standard Combo",{ "Basic Standard Combo", 0, 225, 36, -20, 18, 2, 2 } },
 { "Focused Touch",{ "Focused Touch", 0, 150, 18, -10, 68, 1 } },
 { "Focused Touch Combo",{ "Focused Touch Combo", 0, 150, 25, -10, 68, 1, 2 } },
@@ -166,7 +166,7 @@ pair<int, int> level_factor_table[80] = {
 
 map<string, string> skill_name_cn = {
 	{ "Muscle Memory","坚信" },
-{ "Reflect","娴静" },
+{ "Reflect","闲静" },
 { "Observe","观察" },
 { "Basic Synthesis","制作" },
 { "Careful Synthesis","模范制作" },
@@ -176,7 +176,7 @@ map<string, string> skill_name_cn = {
 { "Brand of the Elements","元素之印记" },
 { "Basic Touch","加工" },
 { "Standard Touch","中级加工" },
-{ "Standard Touch (Combo)","中级加工（连击）" },
+{ "Standard Touch (Combo)","中级加工" },
 { "Basic Standard Combo","加工+中级加工连击" },
 { "Focused Touch","注视加工" },
 { "Focused Touch Combo","注视加工连击" },

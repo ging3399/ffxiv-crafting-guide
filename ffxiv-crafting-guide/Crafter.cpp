@@ -565,7 +565,7 @@ void Crafter::read_paras_cn() {
 	cin >> character_level >> craftsmanship >> control >> CP;
 	cout << endl << "配方信息（配方等级、作业精度要求、加工精度要求、进度、品质、耐久）： " << endl;
 	cin >> recipe_level >> suggested_craftsmanship >> suggested_control >> Pmax >> Qmax >> Dmax;
-	cout << endl << "您希望第一个技能使用什么？坚信 (M)、娴静 (R)、内静 (I)：" << endl;
+	cout << endl << "您希望第一个技能使用什么？坚信 (M)、闲静 (R)、内静 (I)：" << endl;
 	char s;
 	cin >> s;
 	cout << endl << "下面这个参数衡量了在俭约状态下1点耐久对应的制作力，调高这个参数将会降低坯料制作/坯料加工的效果。" << endl
@@ -608,8 +608,13 @@ void Crafter::print_en() {
 	cout << "Turn" << setw(25) << "Skill" << setw(12) << "Progress" << setw(12) << "Quality" << setw(12) << "Durability" << endl;
 	int t = 0;
 	for (auto p = res_list.begin(); p != res_list.end(), p->skill != "Empty"; ++p)
-		cout << setw(4) << ++t << setw(25) << p->skill << setw(12) << p->progress << setw(12) << p->quality << setw(12) << p->dur << endl;
+		cout << setw(4) << ++t << setw(25) << skill_table[p->skill].name << setw(12) << p->progress << setw(12) << p->quality << setw(12) << p->dur << endl;
 	cout << "Total CP: " << res_list.back().CP_consumed << "\t\t" << "HQ percent: " << get_HQ_percent() << endl;
+
+	//macro
+	cout << endl << "In-game macro: " << endl;
+	for (auto p = res_list.begin(); p != res_list.end(), p->skill != "Empty"; ++p)
+		cout << "/ac \"" << skill_table[p->skill].name << "\"" << endl;
 }
 
 void Crafter::print_cn() {
@@ -626,4 +631,9 @@ void Crafter::print_cn() {
 	for (auto p = res_list.begin(); p != res_list.end(), p->skill != "Empty"; ++p)
 		cout << setw(4) << ++t << setw(25) << skill_name_cn[p->skill] << setw(12) << p->progress << setw(12) << p->quality << setw(12) << p->dur << endl;
 	cout << "制作力总计：" << res_list.back().CP_consumed << "\t\t" << "HQ概率：" << get_HQ_percent() << endl;
+
+	//macro
+	cout << endl << "游戏宏：" << endl;
+	for (auto p = res_list.begin(); p != res_list.end(), p->skill != "Empty"; ++p)
+		cout << "/ac " << skill_name_cn[p->skill] << endl;
 }
