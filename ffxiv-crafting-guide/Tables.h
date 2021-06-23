@@ -7,6 +7,7 @@
 using std::map;
 using std::string;
 
+
 map<string, skill> skill_table = {
 	{ "Empty",{ "Empty", 0, 0, 0, 0, 1, 0, 0 } },
 { "Muscle Memory",{ "Muscle Memory", 300, 0, 6, -10, 54, 0 } },
