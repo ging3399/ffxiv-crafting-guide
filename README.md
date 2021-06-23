@@ -14,5 +14,9 @@ Open ffxiv-crafting-guide.exe, follow the instructions and you'll get the result
 3. One can only let the rotation start with "Muscle Memory", "Reflect" and "Inner Quiet".
 4. The character level is ignored and set to lvl80 at present. Manipulation is automatically learned.
 
+## Update
+### version 0.0.1
+1. In-game macros will be generated now.
+2. Fix a typo in Simplified Chinese language.
 
 There are definitely a lot of bugs, and I sincerely welcome all kinds of issues and advice ;)
