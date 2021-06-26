@@ -65,28 +65,62 @@ struct Crafter {
 	int recipe_level; //Recipe properties
 	double  suggested_craftsmanship, suggested_control;
 	int Pmax, Qmax, Dmax;
+	int tPmax, tQmax;
 	int level_progress_factor, level_quality_factor;
 	int start_with;
 	double alpha_10 = 2.4, alpha_20 = 1.2; //1(Dur)=alpha(CP)
 	list<status> p_list, q_list, res_list;
 
-	Crafter(int language) :language(language) {
-		read_paras();
-		level_progress_factor = get_level_progress_factor();
-		level_quality_factor = get_level_quality_factor();
-	}
+	struct p_dpnode {
+		double cost = DBL_MAX;
+		int P_dad = -1;
+		status stat; //simplified rotation, status under which skill is executed
+		void set(double cost, int P_dad, string skill, bool has_Ven) {
+			this->cost = cost;
+			this->P_dad = P_dad;
+			this->stat.skill = skill;
+			this->stat.Ven = has_Ven;
+		}
+	};
+	p_dpnode* pdp;
+
+	int min_IQ;
+	struct q_dpnode {
+		double cost = DBL_MAX;
+		int k_dad = -1;
+		int Q_dad = -1;
+		status stat; //simplified rotation, status under which skill is executed
+		void set(double cost, int k_dad, int Q_dad, string skill, bool has_Inn, bool has_GS) {
+			this->cost = cost;
+			this->k_dad = k_dad;
+			this->Q_dad = Q_dad;
+			this->stat.skill = skill;
+			this->stat.Inn = has_Inn;
+			this->stat.GS = has_GS;
+		}
+	};
+	q_dpnode** qdp;
+
+	Crafter(int language);
 
 	int get_level_progress_factor();
 	int get_level_quality_factor();
 	double get_unit_progress() const;
 	double get_unit_quality(int IQ) const;
 
-	void pool_progress();
-	void pool_quality();
+	double _pdp_curr_cost(int P, string s, int P_dad, bool has_MM, bool has_Ven);
+	void _pdp_update(int P, string s);
+	void dp_progress();
+
+	double _qdp_curr_cost(int k, int Q, string s, int k_dad, int Q_dad, bool has_Inn, bool has_GS);
+	void _qdp_update(int k, int Q, string s);
+	void dp_quality();
+
 	void combo_expand(list<status>& l);
 	list<status> dur_arrange(list<status>& pre);
 	void merge();
 
+	bool test_Q(int Q);
 	void solve_me();
 
 	int get_HQ_percent();
@@ -96,4 +130,6 @@ struct Crafter {
 	void print();
 	void print_en();
 	void print_cn();
+
+	~Crafter();
 };

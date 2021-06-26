@@ -118,6 +118,32 @@ void status::step(const Crafter& c, const string& s) {
 		Man = 8;
 }
 
+Crafter::Crafter(int language) :language(language) {
+	read_paras();
+	level_progress_factor = get_level_progress_factor();
+	level_quality_factor = get_level_quality_factor();
+
+	if (start_with == START_WITH_MUSCLE_MEMORY) {
+		tPmax -= skill_table["Muscle Memory"].get_progress(*this, false, false); //Muscle Memory
+		min_IQ = 1;
+	}
+	else if (start_with == START_WITH_REFLECT) {
+		min_IQ = 3;
+		tQmax -= skill_table["Reflect"].get_quality(*this, 0, false, false); //Reflect
+	}
+	else
+		min_IQ = 1;
+	if (tPmax < 0)
+		tPmax = 0; //In case a single Muscle Memory fills all the progress
+	if (tQmax < 0)
+		tQmax = 0;
+
+	pdp = new p_dpnode[tPmax + 1];
+	qdp = new q_dpnode*[12];
+	for (int k = 0; k <= 11; ++k)
+		qdp[k] = new q_dpnode[tQmax + 1];
+}
+
 int Crafter::get_level_progress_factor() {
 	int level_diff = level_table[character_level - 1] - recipe_level;
 	if (level_diff < -30)
@@ -145,168 +171,105 @@ double Crafter::get_unit_quality(int IQ) const {
 	return (current_control + 10000) / (suggested_control + 10000)*((current_control * 35) / 100 + 35)*level_quality_factor / 100;  //corresponding to 100%
 }
 
-void Crafter::pool_progress() {
-	struct dpnode {
-		double cost = DBL_MAX;
-		int P_dad = -1;
-		status stat; //simplified rotation, status under which skill is executed
-		void set(double cost, int P_dad, string skill, bool has_Ven) {
-			this->cost = cost;
-			this->P_dad = P_dad;
-			this->stat.skill = skill;
-			this->stat.Ven = has_Ven;
+double Crafter::_pdp_curr_cost(int P, string s, int P_dad, bool has_MM, bool has_Ven) {
+	double buff_cost = 0.0;
+	if (has_Ven)
+		buff_cost += 4.5 * p_table[s].step;
+	double alpha;
+	if (p_table[s].dur == -20 && p_table[s].step == 1)
+		alpha = alpha_20;
+	else
+		alpha = alpha_10;
+	return pdp[P_dad].cost + p_table[s].CP + buff_cost - alpha * p_table[s].dur;
+}
+
+void Crafter::_pdp_update(int P, string s) {
+	for (bool has_MM : {false, true}) {
+		if (start_with != START_WITH_MUSCLE_MEMORY && has_MM == true)
+			continue;
+		for (bool has_Ven : {false, true}) {
+			int P_dad = (P - p_table[s].get_progress(*this, has_MM, has_Ven) > 0) ? (P - p_table[s].get_progress(*this, has_MM, has_Ven)) : 0;
+			if (has_MM && P_dad > 0)
+				continue;
+			double curr_cost = _pdp_curr_cost(P, s, P_dad, has_MM, has_Ven);
+			if (curr_cost < pdp[P].cost) //use lazy update to ensure a relative descent order
+				pdp[P].set(curr_cost, P_dad, s, has_Ven);
 		}
-	};
+	}
+}
 
-	if (start_with == START_WITH_MUSCLE_MEMORY)
-		Pmax -= skill_table["Muscle Memory"].get_progress(*this, false, false); //Muscle Memory
-	if (Pmax < 0)
-		Pmax = 0; //In case a single Muscle Memory fills all the progress
-	dpnode* dp = new dpnode[Pmax + 1];
-	for (int P = 0; P <= Pmax; ++P) {
+void Crafter::dp_progress() {
+	for (int P = 0; P <= tPmax; ++P) {
 		if (P == 0)
-			dp[P].set(0.0, P, "Empty", false);
+			pdp[P].set(0.0, P, "Empty", false);
 		else {
-			dp[P].set(DBL_MAX, -1, "NULL", false); //by induction, all the impossible nodes are in this form
+			pdp[P].set(DBL_MAX, -1, "NULL", false); //by induction, all the impossible nodes are in this form
 			for (auto& s : p_table) {
-				auto dp_update = [&](bool has_MM, bool has_Ven) {
-					double buff_cost = 0.0;
-					if (has_Ven)
-						buff_cost += 4.5 * s.second.step;
-					int P_dad = (P - s.second.get_progress(*this, has_MM, has_Ven) > 0) ? (P - s.second.get_progress(*this, has_MM, has_Ven)) : 0;
-					if (has_MM && P_dad > 0)
-						return;
-					double alpha;
-					if (s.second.dur == -20 && s.second.step == 1)
-						alpha = alpha_20;
-					else
-						alpha = alpha_10;
-					double curr_cost = dp[P_dad].cost + s.second.CP + buff_cost - alpha * s.second.dur;
-					if (curr_cost < dp[P].cost) //use lazy update to ensure a relative descent order
-						dp[P].set(curr_cost, P_dad, s.first, has_Ven);
-				};
-
 				if (s.first == "Empty")
 					continue;
-				dp_update(false, false); //without Veneration
-				dp_update(false, true); //with Veneration
-				if (start_with == START_WITH_MUSCLE_MEMORY) {
-					dp_update(true, false); //without Veneration
-					dp_update(true, true); //with Veneration
-				}
+				_pdp_update(P, s.first);
 			}
 		}
 	}
-	dpnode* curr = &dp[Pmax];
+	p_dpnode* curr = &pdp[tPmax];
 	if (curr->stat.skill != "NULL") {
 		while (curr->stat.skill != "Empty") {
 			p_list.emplace_front(curr->stat);
-			curr = &dp[curr->P_dad];
+			curr = &pdp[curr->P_dad];
 		}
 	}
 	if (p_list.empty()) { //in case a single Muscle Memory fill all the progress
 		p_list.emplace_front(curr->stat);
 		p_list.begin()->skill = "Basic Synthesis";
 	}
-	delete[] dp;
 }
 
-void Crafter::pool_quality() {
-	struct dpnode {
-		double cost = DBL_MAX;
-		int k_dad = -1;
-		int Q_dad = -1;
-		status stat; //simplified rotation, status under which skill is executed
-		void set(double cost, int k_dad, int Q_dad, string skill, bool has_Inn, bool has_GS) {
-			this->cost = cost;
-			this->k_dad = k_dad;
-			this->Q_dad = Q_dad;
-			this->stat.skill = skill;
-			this->stat.Inn = has_Inn;
-			this->stat.GS = has_GS;
-		}
-	};
-
-	int min_IQ;
-	if (start_with == START_WITH_MUSCLE_MEMORY)
-		min_IQ = 1;
-	else if (start_with == START_WITH_REFLECT) {
-		min_IQ = 3;
-		Qmax -= skill_table["Reflect"].get_quality(*this, 0, false, false); //Reflect
-	}
+double Crafter::_qdp_curr_cost(int k, int Q, string s, int k_dad, int Q_dad, bool has_Inn, bool has_GS) {
+	double buff_cost = 0.0;
+	if (has_Inn)
+		buff_cost += 4.5 * q_table[s].step;
+	if (has_GS)
+		buff_cost += 32;
+	double alpha;
+	if (q_table[s].dur == -20 && q_table[s].step == 1)
+		alpha = alpha_20;
 	else
-		min_IQ = 1;
-	if (Qmax <= 0)
-		return;
-	dpnode** dp = new dpnode*[12];
-	for (int k = 0; k <= 11; ++k)
-		dp[k] = new dpnode[Qmax + 1];
-	for (int k = min_IQ; k <= 11; ++k) {
-		for (int Q = 0; Q <= Qmax; ++Q) {
-			if (k == min_IQ && Q == 0)
-				dp[k][Q].set(0.0, k, Q, "Empty", false, false);
-			else {
-				dp[k][Q].set(DBL_MAX, -1, -1, "NULL", false, false); //by induction, all the impossible nodes are in this form
-				for (auto& s : q_table) {
-					auto _dp_update = [&](int k_dad, bool has_Inn, bool has_GS) {
-						double buff_cost = 0.0;
-						if (has_Inn)
-							buff_cost += 4.5 * s.second.step;
-						if (has_GS)
-							buff_cost += 32;
-						int Q_dad = (Q - s.second.get_quality(*this, k_dad, has_Inn, has_GS) > 0) ? (Q - s.second.get_quality(*this, k_dad, has_Inn, has_GS)) : 0;
-						double alpha;
-						if (s.second.dur == -20 && s.second.step == 1)
-							alpha = alpha_20;
-						else
-							alpha = alpha_10;
-						double curr_cost = dp[k_dad][Q_dad].cost + s.second.CP + buff_cost - alpha * s.second.dur;
-						if (curr_cost <= dp[k][Q].cost) //use gready update to ensure more powerful skills at later steps
-							dp[k][Q].set(curr_cost, k_dad, Q_dad, s.first, has_Inn, has_GS);
-					};
+		alpha = alpha_10;
+	return qdp[k_dad][Q_dad].cost + q_table[s].CP + buff_cost - alpha * q_table[s].dur;
+}
 
-					if (s.first == "Empty")
+void Crafter::_qdp_update(int k, int Q, string s) {
+	for (int k_dad : {k, k - q_table[s].IQ_stack_granted}) {
+		if (k != 11 && k_dad == k || k_dad < min_IQ) //there can be no IQ stack granted since IQ stack cap is 11
+			continue;
+		for (bool has_Inn : {false, true}) {
+			for (bool has_GS : {false, true}) {
+				int Q_dad = (Q - q_table[s].get_quality(*this, k_dad, has_Inn, has_GS) > 0) ? (Q - q_table[s].get_quality(*this, k_dad, has_Inn, has_GS)) : 0;
+				double curr_cost = _qdp_curr_cost(k, Q, s, k_dad, Q_dad, has_Inn, has_GS);
+				if (curr_cost <= qdp[k][Q].cost) //use gready update to ensure more powerful skills at later steps
+					qdp[k][Q].set(curr_cost, k_dad, Q_dad, s, has_Inn, has_GS);
+			}
+		}
+	}
+};
+
+void Crafter::dp_quality() {
+	if (tQmax <= 0)
+		return;
+	for (int k = min_IQ; k <= 11; ++k) {
+		for (int Q = 0; Q <= tQmax; ++Q) {
+			if (k == min_IQ && Q == 0)
+				qdp[k][Q].set(0.0, k, Q, "Empty", false, false);
+			else {
+				qdp[k][Q].set(DBL_MAX, -1, -1, "NULL", false, false); //by induction, all the impossible nodes are in this form
+				for (auto& s : q_table) {
+					if (s.first == "Empty" || s.first == "Byregot's Blessing")
 						continue;
-					if (s.first == "Byregot's Blessing" && Q != Qmax) //check Byregot's Blessing only at dp[k][Q_max]
-						continue;
-					//IQ stack granted
-					int k_dad = k - s.second.IQ_stack_granted;
-					if (k_dad < min_IQ)
-						continue;
-					_dp_update(k_dad, false, false);
-					_dp_update(k_dad, false, true);
-					_dp_update(k_dad, true, false);
-					_dp_update(k_dad, true, true);
-					//there can be no IQ stack granted since IQ stack cap is 11
-					if (k == 11) {
-						k_dad = k;
-						_dp_update(k_dad, false, false);
-						_dp_update(k_dad, false, true);
-						_dp_update(k_dad, true, false);
-						_dp_update(k_dad, true, true);
-					}
+					_qdp_update(k, Q, s.first);
 				} //skill s
 			}
 		} //Q
 	} //k
-	double cost = DBL_MAX;
-	int final_IQ = min_IQ;
-	for (int k = min_IQ; k <= 11; ++k) {
-		if (dp[k][Qmax].cost < cost) {
-			final_IQ = k;
-			cost = dp[k][Qmax].cost;
-		}
-	}
-	dpnode* curr = &dp[final_IQ][Qmax];
-	if (curr->stat.skill != "NULL") {
-		while (curr->stat.skill != "Empty") {
-			q_list.emplace_front(curr->stat);
-			curr = &dp[curr->k_dad][curr->Q_dad];
-		}
-	}
-	for (int k = 0; k <= 11; ++k)
-		delete[] dp[k];
-	delete[] dp;
 }
 
 void Crafter::combo_expand(list<status>& l) {
@@ -492,6 +455,37 @@ void Crafter::merge() {
 	}
 }
 
+bool Crafter::test_Q(int Q) {
+	q_list.clear();
+	res_list.clear();
+	double cost = DBL_MAX;
+	q_dpnode final_node;
+	final_node.set(DBL_MAX, -1, -1, "NULL", false, false);
+	for (int k = min_IQ; k <= 11; ++k) {
+		cost = qdp[k][Q].cost;
+		for (bool has_Inn : {false, true}) {
+			for (bool has_GS : {false, true}) {
+				int Q_dad = (Q - q_table["Byregot's Blessing"].get_quality(*this, k, has_Inn, has_GS) > 0) ? (Q - q_table["Byregot's Blessing"].get_quality(*this, k, has_Inn, has_GS)) : 0;
+				double curr_cost = _qdp_curr_cost(k, Q, "Byregot's Blessing", k, Q_dad, has_Inn, has_GS);
+				if (curr_cost <= cost)
+					final_node.set(curr_cost, k, Q_dad, "Byregot's Blessing", has_Inn, has_GS);
+			}
+		}
+	}
+	q_dpnode* curr = &final_node;
+	if (curr->stat.skill != "NULL") {
+		while (curr->stat.skill != "Empty") {
+			q_list.emplace_front(curr->stat);
+			curr = &qdp[curr->k_dad][curr->Q_dad];
+		}
+	}
+	merge();
+	if (!res_list.empty() && res_list.back().CP_consumed <= CP)
+		return true;
+	else
+		return false;
+}
+
 void Crafter::solve_me() {
 	switch (language) {
 	case 1: //English
@@ -501,7 +495,7 @@ void Crafter::solve_me() {
 	default:
 		cout << "Optimizing progress skills......" << endl << endl; break;
 	}
-	pool_progress();
+	dp_progress();
 
 	switch (language) {
 	case 1: //English
@@ -511,7 +505,7 @@ void Crafter::solve_me() {
 	default:
 		cout << "Optimizing quality skills......" << endl << endl; break;
 	}
-	pool_quality();
+	dp_quality();
 
 	switch (language) {
 	case 1: //English
@@ -521,7 +515,53 @@ void Crafter::solve_me() {
 	default:
 		cout << "Generating rotations......" << endl << endl; break;
 	}
-	merge();
+
+	if (!test_Q(tQmax)) {
+		switch (language) {
+		case 1: //English
+			cout << "Your current character is not strong enough to reach 100% HQ on this recipe." << endl
+				<< "Would you like to search for a rotation which reaches quality as high as possible? Yes(Y)/No(N): " << endl; break;
+		case 2: //Chinese
+			cout << "您的角色属性不足以在这个配方上达到100%HQ。" << endl
+				<< "需要搜索达到尽可能高品质的工序吗？是(Y)/否(N): " << endl; break;
+		default:
+			cout << "Your current character is not strong enough to reach 100% HQ on this recipe." << endl
+				<< "Would you like to search for a rotation which reaches quality as high as possible? Yes(Y)/No(N): " << endl; break;
+		}
+		char ch;
+		cin >> ch;
+		if (ch == 'Y') {
+			switch (language) {
+			case 1: //English
+				cout << endl << "Searching on the space of quality: " << endl
+					<< setw(10) << "Quality" << setw(25) << "Reachability" << endl; break;
+			case 2: //Chinese
+				cout << endl << "正在搜索品质空间：" << endl
+					<< setw(10) << "品质" << setw(25) << "可达性" << endl; break;
+			default:
+				cout << endl << "Searching on the space of quality: " << endl
+					<< setw(10) << "Quality" << setw(25) << "Reachability" << endl; break;
+			}
+			int low = 0, high = tQmax - 1;
+			while (low != high) {
+				if (high - low == 1) {
+					if (!test_Q(high))
+						test_Q(low);
+					low = high;
+				}
+				int mid = (low + high) / 2;
+				cout << setw(10) << mid + Qmax - tQmax;
+				if (test_Q(mid)) {
+					cout << setw(25) << "Yes" << endl;
+					low = mid;
+				}
+				else {
+					cout << setw(25) << "No" << endl;
+					high = mid - 1;
+				}
+			}
+		}
+	}
 	cout << endl;
 }
 
@@ -549,6 +589,8 @@ void Crafter::read_paras_en() {
 	cin >> character_level >> craftsmanship >> control >> CP;
 	cout << endl << "Recipe (level, suggested craftsmanship, suggested control, progress, quality, durability): " << endl;
 	cin >> recipe_level >> suggested_craftsmanship >> suggested_control >> Pmax >> Qmax >> Dmax;
+	tPmax = Pmax;
+	tQmax = Qmax;
 	cout << endl << "Which skill would you like to start with? Muscle Memory(M), Reflect(R), Inner Quiet(I): " << endl;
 	char s;
 	cin >> s;
@@ -573,6 +615,8 @@ void Crafter::read_paras_cn() {
 	cin >> character_level >> craftsmanship >> control >> CP;
 	cout << endl << "配方信息（配方等级、作业精度要求、加工精度要求、进度、品质、耐久）： " << endl;
 	cin >> recipe_level >> suggested_craftsmanship >> suggested_control >> Pmax >> Qmax >> Dmax;
+	tPmax = Pmax;
+	tQmax = Qmax;
 	cout << endl << "您希望第一个技能使用什么？坚信 (M)、闲静 (R)、内静 (I)：" << endl;
 	char s;
 	cin >> s;
@@ -605,7 +649,7 @@ void Crafter::print() {
 }
 
 void Crafter::print_en() {
-	cout << "/**********************Optimization Result**********************/" << endl;
+	cout << "/**************************Optimization Result**************************/" << endl;
 	if (res_list.empty()) {
 		cout << "Fail to craft under current input :(" << endl
 			<< "Here are some tips for you: " << endl
@@ -613,10 +657,10 @@ void Crafter::print_en() {
 			<< "\t 2. Maybe it'll work if you try another skill to start with." << endl;
 		return;
 	}
-	cout << "Turn" << setw(25) << "Skill" << setw(12) << "Progress" << setw(12) << "Quality" << setw(12) << "Durability" << endl;
+	cout << setw(10) << "Turn" << setw(26) << "Skill" << setw(12) << "Progress" << setw(12) << "Quality" << setw(12) << "Durability" << endl;
 	int t = 0;
 	for (auto p = res_list.begin(); p != res_list.end(), p->skill != "Empty"; ++p)
-		cout << setw(4) << ++t << setw(25) << skill_table[p->skill].name << setw(12) << p->progress << setw(12) << p->quality << setw(12) << p->dur << endl;
+		cout << setw(10) << ++t << setw(26) << skill_table[p->skill].name << setw(12) << p->progress << setw(12) << p->quality << setw(12) << p->dur << endl;
 	cout << "Total CP: " << res_list.back().CP_consumed << "\t\t" << "HQ percent: " << get_HQ_percent() << endl;
 
 	//macro
@@ -626,7 +670,7 @@ void Crafter::print_en() {
 }
 
 void Crafter::print_cn() {
-	cout << "/***************************优化结果***************************/" << endl;
+	cout << "/*******************************优化结果*******************************/" << endl;
 	if (res_list.empty()) {
 		cout << "制作失败 :(" << endl
 			<< "给您的一些建议如下：" << endl
@@ -634,14 +678,21 @@ void Crafter::print_cn() {
 			<< "\t 2. 尝试更换其他的起手技能。" << endl;
 		return;
 	}
-	cout << "工次" << setw(25) << "技能" << setw(12) << "进度" << setw(12) << "品质" << setw(12) << "耐久" << endl;
+	cout << setw(10) << "工次" << setw(26) << "技能" << setw(12) << "进度" << setw(12) << "品质" << setw(12) << "耐久" << endl;
 	int t = 0;
 	for (auto p = res_list.begin(); p != res_list.end(), p->skill != "Empty"; ++p)
-		cout << setw(4) << ++t << setw(25) << skill_name_cn[p->skill] << setw(12) << p->progress << setw(12) << p->quality << setw(12) << p->dur << endl;
+		cout << setw(10) << ++t << setw(26) << skill_name_cn[p->skill] << setw(12) << p->progress << setw(12) << p->quality << setw(12) << p->dur << endl;
 	cout << "制作力总计：" << res_list.back().CP_consumed << "\t\t" << "HQ概率：" << get_HQ_percent() << endl;
 
 	//macro
 	cout << endl << "游戏宏：" << endl;
 	for (auto p = res_list.begin(); p != res_list.end(), p->skill != "Empty"; ++p)
 		cout << "/ac " << skill_name_cn[p->skill] << endl;
+}
+
+Crafter::~Crafter() {
+	delete[] pdp;
+	for (int k = 0; k <= 11; ++k)
+		delete[] qdp[k];
+	delete[] qdp;
 }
