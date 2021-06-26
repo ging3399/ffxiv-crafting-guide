@@ -15,6 +15,9 @@ Open ffxiv-crafting-guide.exe, follow the instructions and you'll get the result
 4. The character level is ignored and set to lvl80 at present. Manipulation is automatically learned.
 
 ## Updates
+### version 0.0.3
+Major update: now when the input character is not strong enough to reach 100% HQ on the recipe, one can choose to search for rotations that maximize quality.
+
 ### version 0.0.2
 Fix the formulas of Basic + Standard Touch combo, and they won't be overused now.
 
