@@ -16,23 +16,45 @@ using std::cout;
 using std::setw;
 using std::endl;
 
+int skill::get_progress(const Crafter & c, bool has_MM, bool has_Ven) {
+	double buff = 0.0;
+	if (has_Ven)
+		buff += 0.5;
+	if (has_MM)
+		buff += 1;
+	return static_cast<int>(c.get_unit_progress() * rp*(1 + buff) / 100); //after rounding
+}
+
+int skill::get_quality(const Crafter & c, int current_IQ, bool has_Inn, bool has_GS) {
+	double buff = 0.0;
+	if (has_Inn)
+		buff += 0.5;
+	if (has_GS)
+		buff += 1;
+	int current_rq = rq;
+	if (this->name == "Basic Standard Combo")
+		current_rq = 100; //Basic Touch
+	if (this->name == "Byregot's Blessing")
+		current_rq += 20 * (current_IQ > 1 ? current_IQ - 1 : 0);
+	int res = static_cast<int>(c.get_unit_quality(current_IQ) * current_rq*(1 + buff) / 100);
+	if (this->name == "Basic Standard Combo") {
+		if (has_GS)
+			buff -= 1;
+		current_rq = 125; //Standard Touch
+		res += static_cast<int>(c.get_unit_quality(current_IQ + 1) * current_rq*(1 + buff) / 100);
+	}
+	return res; //after rounding
+}
+
+
 void status::step(const Crafter& c, const string& s) {
 	skill = s;
 	if (skill == "NULL") {
 		CP_consumed = INT_MAX;
 		return;
 	}
-	double pbuff = 0.0, qbuff = 0.0;
-	if (MM > 0)
-		pbuff += 1;
-	if (Ven > 0)
-		pbuff += 0.5;
-	progress += skill_table[s].get_progress(c.get_unit_progress(), pbuff);
-	if (Inn > 0)
-		qbuff += 0.5;
-	if (GS > 0)
-		qbuff += 1;
-	quality += skill_table[s].get_quality(c.get_unit_quality(IQ), IQ, qbuff);
+	progress += skill_table[s].get_progress(c, MM > 0, Ven > 0);
+	quality += skill_table[s].get_quality(c, IQ, Inn > 0, GS > 0);
 
 	CP_consumed += skill_table[s].CP;
 
@@ -136,9 +158,8 @@ void Crafter::pool_progress() {
 		}
 	};
 
-	double up = get_unit_progress();
 	if (start_with == START_WITH_MUSCLE_MEMORY)
-		Pmax -= skill_table["Muscle Memory"].get_progress(up, 0.0); //Muscle Memory
+		Pmax -= skill_table["Muscle Memory"].get_progress(*this, false, false); //Muscle Memory
 	if (Pmax < 0)
 		Pmax = 0; //In case a single Muscle Memory fills all the progress
 	dpnode* dp = new dpnode[Pmax + 1];
@@ -149,18 +170,14 @@ void Crafter::pool_progress() {
 			dp[P].set(DBL_MAX, -1, "NULL", false); //by induction, all the impossible nodes are in this form
 			for (auto& s : p_table) {
 				auto dp_update = [&](bool has_MM, bool has_Ven) {
-					double buff = 0.0, buff_cost = 0.0;
-					if (has_Ven) {
-						buff += 0.5;
-						buff_cost += 4.5*s.second.step;
-					}
-					if (has_MM)
-						buff += 1;
-					int P_dad = (P - s.second.get_progress(up, buff) > 0) ? (P - s.second.get_progress(up, buff)) : 0;
+					double buff_cost = 0.0;
+					if (has_Ven)
+						buff_cost += 4.5 * s.second.step;
+					int P_dad = (P - s.second.get_progress(*this, has_MM, has_Ven) > 0) ? (P - s.second.get_progress(*this, has_MM, has_Ven)) : 0;
 					if (has_MM && P_dad > 0)
 						return;
 					double alpha;
-					if (s.second.dur == -20)
+					if (s.second.dur == -20 && s.second.step == 1)
 						alpha = alpha_20;
 					else
 						alpha = alpha_10;
@@ -210,13 +227,12 @@ void Crafter::pool_quality() {
 		}
 	};
 
-	double uq = get_unit_quality(0);
 	int min_IQ;
 	if (start_with == START_WITH_MUSCLE_MEMORY)
 		min_IQ = 1;
 	else if (start_with == START_WITH_REFLECT) {
 		min_IQ = 3;
-		Qmax -= skill_table["Reflect"].get_quality(uq, 0, 0.0); //Reflect
+		Qmax -= skill_table["Reflect"].get_quality(*this, 0, false, false); //Reflect
 	}
 	else
 		min_IQ = 1;
@@ -233,22 +249,14 @@ void Crafter::pool_quality() {
 				dp[k][Q].set(DBL_MAX, -1, -1, "NULL", false, false); //by induction, all the impossible nodes are in this form
 				for (auto& s : q_table) {
 					auto _dp_update = [&](int k_dad, bool has_Inn, bool has_GS) {
-						double buff = 0.0, buff_cost = 0.0;
-						if (has_Inn) {
-							buff += 0.5;
-							buff_cost += 4.5*s.second.step;
-						}
-						if (has_GS) {
-							if (s.first == "Basic Standard Combo")
-								buff += 125 / 225;
-							else
-								buff += 1;
+						double buff_cost = 0.0;
+						if (has_Inn)
+							buff_cost += 4.5 * s.second.step;
+						if (has_GS)
 							buff_cost += 32;
-						}
-						uq = get_unit_quality(k_dad);
-						int Q_dad = (Q - s.second.get_quality(uq, k_dad, buff) > 0) ? (Q - s.second.get_quality(uq, k_dad, buff)) : 0;
+						int Q_dad = (Q - s.second.get_quality(*this, k_dad, has_Inn, has_GS) > 0) ? (Q - s.second.get_quality(*this, k_dad, has_Inn, has_GS)) : 0;
 						double alpha;
-						if (s.second.dur == -20)
+						if (s.second.dur == -20 && s.second.step == 1)
 							alpha = alpha_20;
 						else
 							alpha = alpha_10;

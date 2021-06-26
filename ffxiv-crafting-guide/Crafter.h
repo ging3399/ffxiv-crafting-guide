@@ -18,6 +18,8 @@ using std::function;
 #define START_WITH_REFLECT 1
 #define START_WITH_INNER_QUIET 2
 
+struct Crafter;
+
 struct skill {
 	string name;
 	int rp;
@@ -38,19 +40,10 @@ struct skill {
 	};
 	//Progress and Quality are stored by percents
 
-	int get_progress(double unit_progress, double buff) {
-		return static_cast<int>(unit_progress * rp*(1 + buff) / 100); //after rounding
-	}
-
-	int get_quality(double unit_quality, int current_IQ, double buff) {
-		int current_rq = rq;
-		if (this->name == "Byregot's Blessing")
-			current_rq += 20 * (current_IQ > 1 ? current_IQ - 1 : 0);
-		return static_cast<int>(unit_quality * current_rq*(1 + buff) / 100); //after rounding
-	}
+	int get_progress(const Crafter& c, bool has_MM, bool has_Ven);
+	int get_quality(const Crafter& c, int current_IQ, bool has_Inn, bool has_GS);
 };
 
-struct Crafter;
 struct status {
 	string skill;
 	int progress = 0, quality = 0, CP_consumed = 0, dur = 0, Dmax = 0;
